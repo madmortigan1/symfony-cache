@@ -1,0 +1,6 @@
+parameters:
+    # Infrastructure
+    kernel.cache: '/var/cache'
+    kernel.secret: "%env(APP_SECRET)%"
+    framework_cache_lifetime: 1
+    framework_cache_adapter: cache.adapter.redis

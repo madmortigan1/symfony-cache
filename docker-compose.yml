@@ -1,0 +1,34 @@
+version: '3.7'
+services:
+  redis:
+    image: redis:5.0.5-alpine
+    container_name: test_redis_cache
+    hostname: redis
+    ports:
+      - "6378:6379"
+    networks:
+      - redis-net
+    volumes:
+      - cacheVolumn:/data
+
+  web:
+    container_name: test_web
+    volumes:
+      - logvolume:/var/log
+    privileged: true
+    networks:
+      - backend
+      - redis-net
+
+volumes:
+  logvolume: {}
+  cacheVolumn: {}
+
+networks:
+  cluster:
+    driver: bridge
+  forhost:
+    internal: false
+  backend:
+    internal: true
+  redis-net:
