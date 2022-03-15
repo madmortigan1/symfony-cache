@@ -1,5 +1,18 @@
 version: '3.7'
 services:
+  db:
+    restart: always
+    image: postgres:11.5-alpine
+    volumes:
+      - sym6Volume:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: sym6
+      POSTGRES_USER: sym6
+      POSTGRES_PASSWORD: 12345
+      CONFIGS: "listen_addresses:'*',max_replication_slots:5"
+    ports:
+      - 5437:5432
+
   web:
     expose:
       - "9000"
@@ -9,8 +22,6 @@ services:
       - 851:80
       - 8546:443
     volumes:
-      - logvolume:/var/log
-      - symfonyCacheVolume:/var/www/html/var/cache
       - ${PWD}/web/scripts:/var/www/html/scripts
       - type: bind
         source: ${PWD}/site
@@ -21,10 +32,11 @@ services:
       APP_ENV: 'dev'
       RUN_SCRIPTS: 1
       SKIP_COMPOSER: 1
-      PHP_MEM_LIMIT: 512MB
+      PHP_MEM_LIMIT: 2048MB
       ENABLE_XDEBUG: 1
       PHP_IDE_CONFIG: serverName=PHPSTORM
 
 volumes:
   logvolume: {}
-  symfonyCacheVolume: {}
+  sym6Volume: {}
+

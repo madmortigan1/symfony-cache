@@ -2,7 +2,7 @@
 # FROM php:8.1-fpm-alpine AS ext-amqp
 
 # Web docker compilations
-FROM php:8.1-fpm-alpine
+FROM php:8.1-fpm
 
 LABEL maintainer="Ric Harvey <ric@ngd.io>"
 
@@ -10,17 +10,154 @@ ENV php_conf /usr/local/etc/php-fpm.conf
 ENV fpm_conf /usr/local/etc/php-fpm.d/www.conf
 ENV php_vars /usr/local/etc/php/conf.d/docker-vars.ini
 
-ENV NGINX_VERSION 1.18.0
+ENV NGINX_VERSION 1.20.2
 ENV LUA_MODULE_VERSION 2.0.4
 ENV DEVEL_KIT_MODULE_VERSION 0.3.1
 ENV GEOIP2_MODULE_VERSION 3.2
 ENV LUAJIT_LIB=/usr/lib
 ENV LUAJIT_INC=/usr/include/luajit-2.1
 
-# resolves #166
-ENV LD_PRELOAD /usr/lib/preloadable_libiconv.so php
-RUN apk add --no-cache --repository http://dl-3.alpinelinux.org/alpine/edge/community gnu-libiconv
+RUN  apt-get update -qq && \
+     apt-get dist-upgrade -y && \
+     apt upgrade -y
 
+# Installing all related packages.
+RUN apt-get install -y \
+    nginx \
+    software-properties-common \
+    bash \
+    patch \
+    openssh-client \
+    wget \
+    supervisor \
+    jpegoptim \
+    pngquant  \
+    procps \
+    jq \
+    zip \
+    curl \
+    libcurl4-openssl-dev \
+    libzip-dev \
+    libbz2-dev \
+    git \
+    python3 \
+    python3-dev \
+    python3-pip \
+    cargo \
+    augeas-tools \
+    ca-certificates \
+    dialog \
+    autoconf \
+    make \
+    gcc \
+    libpcre3  \
+    libpcre3-dev \
+    musl-dev \
+    libmcrypt-dev \
+    libpng-dev \
+    libxslt-dev \
+    libffi-dev \
+    libfreetype6-dev \
+    libjpeg62-turbo-dev \
+    sqlite3 \
+    libc-client-dev \
+    libkrb5-dev \
+    libpq-dev \
+    mlocate \
+    nano \
+    screen \
+    telnet \
+    net-tools \
+    yarn \
+    tzdata \
+    re2c \
+    libxml2 \
+    libldap2-dev \
+    librabbitmq-dev \
+    libssh-dev \
+    libc-dev \
+    libargon2-0-dev \
+    libedit-dev \
+    libsqlite3-dev \
+    libssl-dev \
+    zlib1g-dev \
+    libicu-dev \
+    g++ \
+    gnupg \
+    libmaxminddb-dev \
+    perlbrew \
+    luajit \
+    rpm
+
+#RUN echo @testing http://nl.alpinelinux.org/alpine/edge/testing >> /etc/apk/repositories && \
+#    echo /etc/apk/respositories && \
+#    apk update && apk upgrade &&\
+#RUN apt-get -y install linux-headers-$(uname -r)
+#RUN apt-get -y install linux-image-generic-lts-trusty \
+#    linux-headers-generic-lts-trusty \
+#    linux-headers-gke
+
+RUN docker-php-ext-configure gd \
+      --with-freetype \
+      --with-jpeg
+
+RUN docker-php-ext-install bz2
+
+# Install Postgre PDO
+RUN docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql \
+    && docker-php-ext-install pdo pdo_pgsql pgsql
+
+# Adding PHP extensions
+RUN docker-php-ext-configure imap --with-kerberos --with-imap-ssl && \
+    docker-php-ext-install -j$(nproc) imap
+
+RUN docker-php-ext-install pdo_mysql
+RUN docker-php-ext-install mysqli
+RUN docker-php-ext-install gd
+RUN docker-php-ext-install exif
+RUN docker-php-ext-configure intl
+RUN docker-php-ext-install intl
+RUN docker-php-ext-install xsl
+RUN docker-php-ext-install soap
+RUN docker-php-ext-install zip
+RUN docker-php-ext-install opcache
+
+RUN pecl install xdebug-3.1.3
+RUN pecl install -o -f redis
+RUN echo "extension=redis.so" > /usr/local/etc/php/conf.d/redis.ini
+RUN pecl install amqp \
+    && docker-php-ext-enable amqp
+
+RUN pecl install -o -f igbinary
+RUN docker-php-ext-enable igbinary
+
+RUN docker-php-ext-install gettext sockets
+#RUN pecl install mcrypt-1.0.4
+#RUN curl -o /root/mycrypt.rpm http://rpms.remirepo.net/enterprise/7/remi/x86_64/php-mcrypt-5.4.45-18.el7.remi.x86_64.rpm
+#RUN rpm -i /root/mycrypt.rpm
+#RUN docker-php-ext-enable mcrypt
+
+RUN docker-php-ext-configure ldap --with-libdir=lib/x86_64-linux-gnu/
+RUN docker-php-ext-install ldap
+RUN docker-php-source delete
+RUN mkdir -p /etc/nginx
+RUN mkdir -p /var/www/app
+RUN mkdir -p /run/nginx
+RUN mkdir -p /var/log/supervisor
+RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+RUN php composer-setup.php --quiet --install-dir=/usr/bin --filename=composer
+RUN rm composer-setup.php
+RUN pip3 install -U pip
+RUN pip3 install --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir cryptography==3.1.1
+RUN mkdir -p /etc/letsencrypt/webrootauth
+
+COPY conf/supervisord.conf /etc/supervisord.conf
+
+
+#############################
+##     NGINX INSTALL       ##
+#############################
 RUN GPG_KEYS=B0F4253373F8F6F510D42178520A9993A1C052F8 \
   && CONFIG="\
     --prefix=/etc/nginx \
@@ -70,136 +207,15 @@ RUN GPG_KEYS=B0F4253373F8F6F510D42178520A9993A1C052F8 \
     --add-module=/usr/src/ngx_devel_kit-$DEVEL_KIT_MODULE_VERSION \
     --add-module=/usr/src/lua-nginx-module-$LUA_MODULE_VERSION \
 #    --add-module=/usr/src/ngx_http_geoip2_module-$GEOIP2_MODULE_VERSION \
-  " \
-  && addgroup -S nginx \
-  && adduser -D -S -h /var/cache/nginx -s /sbin/nologin -G nginx nginx \
-  && apk add --no-cache --virtual .build-deps \
-    autoconf \
-    gcc \
-    libc-dev \
-    make \
-    libressl-dev \
-    pcre-dev \
-    zlib-dev \
-    linux-headers \
-    curl \
-    gnupg \
-    libxslt-dev \
-    gd-dev \
- #   geoip-dev \
-    libmaxminddb-dev \
-    perl-dev \
-    luajit-dev \
-    rpm
+  "
 
-RUN apk add nginx
+RUN addgroup nginx --gid 1001
+RUN adduser --disabled-password --disabled-login --gid 1001 --gecos "" nginx
 
-  # Bring in gettext so we can get `envsubst`, then throw
-  # the rest away. To do this, we need to install `gettext`
-  # then move `envsubst` out of the way so `gettext` can
-  # be deleted completely, then move `envsubst` back.
-RUN  apk add --no-cache --virtual .gettext gettext \
-  && mv /usr/bin/envsubst /tmp/ \
-  \
-  && runDeps="$( \
-    scanelf --needed --nobanner /usr/sbin/nginx /usr/lib/nginx/modules/*.so /tmp/envsubst \
-      | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
-      | sort -u \
-      | xargs -r apk info --installed \
-      | sort -u \
-  )" \
-  && apk add --no-cache --virtual .nginx-rundeps $runDeps \
-  && apk del .build-deps \
-  && apk del .gettext \
-  && mv /tmp/envsubst /usr/local/bin/ \
-  \
   # forward request and error logs to docker log collector
-  && ln -sf /dev/stdout /var/log/nginx/access.log \
+RUN   ln -sf /dev/stdout /var/log/nginx/access.log \
   && ln -sf /dev/stderr /var/log/nginx/error.log
 
-RUN echo @testing http://nl.alpinelinux.org/alpine/edge/testing >> /etc/apk/repositories && \
-    echo /etc/apk/respositories && \
-    apk update && apk upgrade &&\
-    apk add --no-cache \
-    bash \
-    openssh-client \
-    wget \
-    supervisor \
-    curl \
-    libcurl \
-    libzip-dev \
-    bzip2-dev \
-    imap-dev \
-    openssl-dev \
-    git \
-    python3 \
-    python3-dev \
-    py3-pip \
-    cargo \
-    rust \
-    augeas-dev \
-    libressl-dev \
-    ca-certificates \
-    dialog \
-    autoconf \
-    libressl  \
-    make \
-    gcc \
-    pcre \
-    zlib  \
-    musl-dev \
-    build-base  \
-    linux-headers \
-    libmcrypt-dev \
-    libpng-dev \
-    icu-dev \
-    libpq \
-    libxslt-dev \
-    libffi-dev \
-    freetype-dev \
-    sqlite-dev \
-    libjpeg-turbo-dev \
-    postgresql-dev && \
-    docker-php-ext-configure gd \
-      --with-freetype \
-      --with-jpeg
-
-
-RUN docker-php-ext-install pdo_mysql
-RUN docker-php-ext-install pgsql
-RUN docker-php-ext-install pdo_pgsql
-RUN docker-php-ext-install mysqli
-RUN docker-php-ext-install gd
-RUN docker-php-ext-install exif
-RUN docker-php-ext-install intl
-RUN docker-php-ext-install xsl
-RUN docker-php-ext-install soap
-RUN docker-php-ext-install zip
-RUN docker-php-ext-install opcache
-
-RUN pecl install xdebug-3.1.2
-RUN pecl install -o -f redis
-RUN echo "extension=redis.so" > /usr/local/etc/php/conf.d/redis.ini
-RUN docker-php-source delete
-RUN mkdir -p /etc/nginx
-RUN mkdir -p /var/www/app
-RUN mkdir -p /run/nginx
-RUN mkdir -p /var/log/supervisor
-RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-RUN php composer-setup.php --quiet --install-dir=/usr/bin --filename=composer
-RUN rm composer-setup.php
-RUN pip3 install -U pip
-RUN pip3 install --upgrade pip setuptools wheel
-RUN pip install --no-cache-dir cryptography==3.1.1
-# RUN pip install -U certbot
-RUN mkdir -p /etc/letsencrypt/webrootauth
-RUN apk del gcc musl-dev linux-headers libffi-dev augeas-dev python3-dev make autoconf
-#    apk del .sys-deps
-#    ln -s /usr/bin/php7 /usr/bin/php
-#    apk del .sys-deps
-#    ln -s /usr/bin/php7 /usr/bin/php
-
-COPY conf/supervisord.conf /etc/supervisord.conf
 
 # Copy our nginx config
 RUN rm -Rf /etc/nginx/nginx.conf
@@ -207,32 +223,21 @@ COPY conf/nginx.conf /etc/nginx/nginx.conf
 
 # nginx site conf
 RUN mkdir -p /etc/nginx/sites-available/ && \
-mkdir -p /etc/nginx/sites-enabled/ && \
-mkdir -p /etc/nginx/ssl/ && \
-rm -Rf /var/www/* && \
-mkdir /var/www/html/
+  mkdir -p /etc/nginx/sites-enabled/ && \
+  mkdir -p /etc/nginx/ssl/ && \
+  rm -Rf /var/www/* && \
+  mkdir /var/www/html/
+
 COPY conf/nginx-site.conf /etc/nginx/sites-available/default.conf
 COPY conf/nginx-site-ssl.conf /etc/nginx/sites-available/default-ssl.conf
-RUN ln -s /etc/nginx/sites-available/default.conf /etc/nginx/sites-enabled/default.conf
 
-## disabled due to license changes (to fix in next release)
-# Add GeoLite2 databases (https://dev.maxmind.com/geoip/geoip2/geolite2/)
-#RUN curl -fSL http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.mmdb.gz -o /etc/nginx/GeoLite2-City.mmdb.gz \
-#    && curl -fSL http://geolite.maxmind.com/download/geoip/database/GeoLite2-Country.mmdb.gz -o /etc/nginx/GeoLite2-Country.mmdb.gz \
-#    && gunzip /etc/nginx/GeoLite2-City.mmdb.gz \
-#    && gunzip /etc/nginx/GeoLite2-Country.mmdb.gz
+#RUN ln -s /etc/nginx/sites-available/default.conf /etc/nginx/sites-enabled/default.conf
 
-# tweak php-fpm config
-RUN echo "cgi.fix_pathinfo=0" > ${php_vars} &&\
-    echo "upload_max_filesize = 100M"  >> ${php_vars} &&\
-    echo "post_max_size = 100M"  >> ${php_vars} &&\
-    echo "variables_order = \"EGPCS\""  >> ${php_vars} && \
-    echo "memory_limit = 128M"  >> ${php_vars} && \
-    sed -i \
+RUN sed -i \
         -e "s/;catch_workers_output\s*=\s*yes/catch_workers_output = yes/g" \
-        -e "s/pm.max_children = 5/pm.max_children = 4/g" \
+       -e "s/pm.max_children = 5/pm.max_children = 4/g" \
         -e "s/pm.start_servers = 2/pm.start_servers = 3/g" \
-        -e "s/pm.min_spare_servers = 1/pm.min_spare_servers = 2/g" \
+       -e "s/pm.min_spare_servers = 1/pm.min_spare_servers = 2/g" \
         -e "s/pm.max_spare_servers = 3/pm.max_spare_servers = 4/g" \
         -e "s/;pm.max_requests = 500/pm.max_requests = 200/g" \
         -e "s/user = www-data/user = nginx/g" \
@@ -243,8 +248,6 @@ RUN echo "cgi.fix_pathinfo=0" > ${php_vars} &&\
         -e "s/listen = 127.0.0.1:9000/listen = \/var\/run\/php-fpm.sock/g" \
         -e "s/^;clear_env = no$/clear_env = no/" \
         ${fpm_conf}
-#    ln -s /etc/php7/php.ini /etc/php7/conf.d/php.ini && \
-#    find /etc/php7/conf.d/ -name "*.ini" -exec sed -i -re 's/^(\s*)#(.*)/\1;\2/g' {} \;
 
 
 ###########################################################################################
@@ -252,52 +255,21 @@ RUN echo "cgi.fix_pathinfo=0" > ${php_vars} &&\
 ##                           CUSTOMIZED                                                  ##
 ###########################################################################################
 ###########################################################################################
-RUN apk add --update --no-cache \
-    mlocate \
-    nano \
-    screen \
-    autoconf \
-    alpine-sdk \
-    libmcrypt-dev \
-    icu-dev \
-    openldap-dev \
-    gettext-dev \
-    busybox-extras \
-    yarn \
-    tzdata
-
-RUN set -x && \
-    apk add --update --no-cache re2c pcre2-dev
-
-RUN set -x && \
-    apk add --update --no-cache rabbitmq-c-dev make
-
 #RUN mkdir -p $HOME/php-amqp && \
 #    cd $HOME/php-amqp && \
 #    git clone https://github.com/pdezwart/php-amqp.git . && git checkout v1.10.2 && \
 #    phpize --clean && phpize && ./configure && make install
 
 # TODO: No amqp version available yet for PHP 8, so the compilation is from mater at the moment
-# RUN pecl install amqp-1.10.2
-ENV EXT_AMQP_VERSION=master
+#RUN pecl install amqp-1.11.0
+#ENV EXT_AMQP_VERSION=master
 
-RUN docker-php-source extract \
-    && apk -Uu add git rabbitmq-c-dev \
-    && git clone --branch $EXT_AMQP_VERSION --depth 1 https://github.com/php-amqp/php-amqp.git /usr/src/php/ext/amqp \
-    && cd /usr/src/php/ext/amqp && git submodule update --init \
-    && docker-php-ext-install amqp
+#RUN docker-php-source extract \
+#    && git clone --branch $EXT_AMQP_VERSION --depth 1 https://github.com/php-amqp/php-amqp.git /usr/src/php/ext/amqp \
+#    && cd /usr/src/php/ext/amqp && git submodule update --init \
+#    && docker-php-ext-install amqp
 
-RUN ls -al /usr/local/lib/php/extensions/
-
-# Adding PHP extensions
-RUN docker-php-ext-install gettext
-#RUN pecl install mcrypt-1.0.4
-RUN apk add rpm
-#RUN curl -o /root/mycrypt.rpm http://rpms.remirepo.net/enterprise/7/remi/x86_64/php-mcrypt-5.4.45-18.el7.remi.x86_64.rpm
-#RUN rpm -i /root/mycrypt.rpm
-
-#RUN docker-php-ext-enable mcrypt
-RUN docker-php-ext-install ldap
+# RUN ls -al /usr/local/lib/php/extensions/
 
 
 

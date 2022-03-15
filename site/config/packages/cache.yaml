@@ -10,3 +10,8 @@ framework:
                 default_lifetime: '%framework_cache_lifetime%'
                 tags: true
 
+            #app.cache:
+            #    adapter: 'cache.adapter.filesystem'
+            #    default_lifetime: '%framework_cache_lifetime%'
+            #    tags: true
+

@@ -1,7 +1,7 @@
 version: '3.7'
 services:
   redis:
-    image: redis:5.0.5-alpine
+    image: redis:6.2.6-alpine
     container_name: test_redis_cache
     hostname: redis
     ports:
@@ -11,10 +11,16 @@ services:
     volumes:
       - cacheVolumn:/data
 
+  db:
+    container_name: sym6_db
+    labels:
+      - "EMR database"
+    networks:
+      - forhost
+      - backend
+
   web:
     container_name: test_web
-    volumes:
-      - logvolume:/var/log
     privileged: true
     networks:
       - backend
