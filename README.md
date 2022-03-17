@@ -1,7 +1,8 @@
 # symfony-cache
 
 A basic app to show PHP not catching exption of "include <file>" command.
-The exception is cought multiple times and then stops and the php crashes without any error or indication.
+The exception is cought multiple times and then stops and the php crashes(sigment faule 11) 
+without any error or indication.
 
 The issue is in the following file: 
   ``` vendors\Symfony\Component\Cache\Adapter\PhpFilesAdapter  ```
